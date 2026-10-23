@@ -4,7 +4,12 @@ on:
   schedule:
     # GitHub Actions schedule uses UTC.
     - cron: "0 0 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "即使 VERSION 已是最新也强制打包并发布（对应 tag 不能已存在）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -54,7 +59,10 @@ jobs:
           echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
           echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
-          if [[ "$LATEST_VERSION" == "$CURRENT_VERSION" ]]; then
+          if [[ "${{ inputs.force }}" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Forced release: $CURRENT_VERSION -> $LATEST_VERSION"
+          elif [[ "$LATEST_VERSION" == "$CURRENT_VERSION" ]]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "Up to date: VERSION=$CURRENT_VERSION"
           else
@@ -80,11 +88,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add VERSION
-          git commit -m "chore: bump HMCL to $VERSION"
-          git tag -a "$VERSION" -m "HMCL $VERSION"
+          # 强制发布时 VERSION 可能没变，此时只打 tag
+          if ! git diff --quiet -- VERSION; then
+            git add VERSION
+            git commit -m "chore: bump HMCL to $VERSION"
+            git push origin "HEAD:$BRANCH"
+          fi
 
-          git push origin "HEAD:$BRANCH"
+          git tag -a "$VERSION" -m "HMCL $VERSION"
           git push origin "$VERSION"
 
       - name: Build DMG
